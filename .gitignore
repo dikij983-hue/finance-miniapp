@@ -4,6 +4,8 @@ dist
 .env.local
 apps/api/.env
 apps/web/.env.local
+# Локальный ключ Render API (только у вас на машине; не в Git)
+.env.render
 *.log
 apps/web/tsconfig.tsbuildinfo
 apps/api/tsconfig.tsbuildinfo
