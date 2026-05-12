@@ -70,6 +70,107 @@ function accountName(accounts: Account[], id: string) {
   return accounts.find((a) => a.id === id)?.name ?? "Счёт";
 }
 
+function categoryInitial(text: string): string {
+  const t = text.trim();
+  if (!t) return "±";
+  const ch = [...t][0];
+  return ch ? ch.toLocaleUpperCase("ru-RU") : "?";
+}
+
+function localDateKeyFromIso(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function todayLocalKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function yesterdayLocalKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateSectionLabel(key: string, todayKey: string, yesterdayKey: string): string {
+  if (key === todayKey) return "Сегодня";
+  if (key === yesterdayKey) return "Вчера";
+  const [y, m, day] = key.split("-").map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString("ru-RU", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+  });
+}
+
+function groupTransactionsByLocalDate(transactions: Transaction[]) {
+  const tk = todayLocalKey();
+  const yk = yesterdayLocalKey();
+  const groups: { key: string; label: string; items: Transaction[] }[] = [];
+  let lastKey = "";
+  for (const t of transactions) {
+    const k = localDateKeyFromIso(t.occurredAt);
+    if (k !== lastKey) {
+      groups.push({ key: k, label: dateSectionLabel(k, tk, yk), items: [] });
+      lastKey = k;
+    }
+    groups[groups.length - 1]!.items.push(t);
+  }
+  return groups;
+}
+
+function TxRow({
+  t,
+  categories,
+  accounts,
+  showDelete,
+  onDelete,
+}: {
+  t: Transaction;
+  categories: Category[];
+  accounts: Account[];
+  showDelete?: boolean;
+  onDelete?: () => void | Promise<void>;
+}) {
+  const titleBase = categoryName(categories, t.categoryId);
+  const title = `${titleBase}${t.note ? ` · ${t.note}` : ""}`;
+  const initial = categoryInitial(titleBase);
+  const avatarClass =
+    t.type === "income"
+      ? "tx-row-avatar tx-row-avatar--income"
+      : "tx-row-avatar tx-row-avatar--expense";
+  const amtClass =
+    t.type === "expense" ? "tx-amount tx-amount--expense" : "tx-amount tx-amount--income";
+
+  return (
+    <li className="tx-row">
+      <div className={avatarClass} aria-hidden>
+        {initial}
+      </div>
+      <div className="tx-row-body">
+        <div className="tx-row-main">
+          <div className="tx-row-title">{title}</div>
+          <div className="tx-row-sub">
+            {accountName(accounts, t.accountId)} · {formatShortDate(t.occurredAt)}
+          </div>
+        </div>
+        <div className="tx-row-actions">
+          <span className={amtClass}>
+            {t.type === "expense" ? "−" : "+"}
+            {formatMoney(t.amountMinor, t.currencyCode)}
+          </span>
+          {showDelete && !t.exchangeGroupId && onDelete && (
+            <button type="button" className="btn btn-ghost btn-ghost-danger" onClick={() => void onDelete()}>
+              Удалить
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export default function App() {
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -221,10 +322,11 @@ export default function App() {
               <>
                 <p className="screen-title">Счета</p>
                 {accounts.length === 0 ? (
-                  <div className="card">
-                    <p style={{ margin: 0, color: "var(--app-hint)", fontSize: "0.9375rem" }}>
-                      Добавьте счёт во вкладке «Ещё», затем записывайте операции.
-                    </p>
+                  <div className="card empty-card">
+                    <p>Счетов пока нет — добавьте первый, чтобы вести учёт.</p>
+                    <button type="button" className="btn btn-primary" onClick={() => setTab("more")}>
+                      Добавить счёт
+                    </button>
                   </div>
                 ) : (
                   <div className="accounts-scroll">
@@ -248,31 +350,16 @@ export default function App() {
                 </p>
                 <div className="card">
                   {sortedTx.length === 0 ? (
-                    <p style={{ margin: 0, color: "var(--app-hint)", fontSize: "0.9375rem" }}>
-                      Пока нет движений. Запись — вкладка «Запись».
-                    </p>
+                    <div className="empty-card">
+                      <p>Операций ещё нет — запишите доход или расход.</p>
+                      <button type="button" className="btn btn-primary" onClick={() => setTab("action")}>
+                        Новая запись
+                      </button>
+                    </div>
                   ) : (
                     <ul className="tx-list">
                       {sortedTx.slice(0, 12).map((t) => (
-                        <li key={t.id} className="tx-row">
-                          <div className="tx-row-main">
-                            <div className="tx-row-title">
-                              {categoryName(categories, t.categoryId)}
-                              {t.note ? ` · ${t.note}` : ""}
-                            </div>
-                            <div className="tx-row-sub">
-                              {accountName(accounts, t.accountId)} · {formatShortDate(t.occurredAt)}
-                            </div>
-                          </div>
-                          <span
-                            className={
-                              t.type === "expense" ? "tx-amount tx-amount--expense" : "tx-amount tx-amount--income"
-                            }
-                          >
-                            {t.type === "expense" ? "−" : "+"}
-                            {formatMoney(t.amountMinor, t.currencyCode)}
-                          </span>
-                        </li>
+                        <TxRow key={t.id} t={t} categories={categories} accounts={accounts} />
                       ))}
                     </ul>
                   )}
@@ -338,49 +425,37 @@ export default function App() {
                 <p className="screen-title">Все операции</p>
                 <div className="card">
                   {sortedTx.length === 0 ? (
-                    <p style={{ margin: 0, color: "var(--app-hint)" }}>Список пуст.</p>
+                    <div className="empty-card">
+                      <p>Здесь появятся все операции.</p>
+                      <button type="button" className="btn btn-primary" onClick={() => setTab("action")}>
+                        Добавить операцию
+                      </button>
+                    </div>
                   ) : (
-                    <ul className="tx-list">
-                      {sortedTx.slice(0, 80).map((t) => (
-                        <li key={t.id} className="tx-row">
-                          <div className="tx-row-main">
-                            <div className="tx-row-title">
-                              {categoryName(categories, t.categoryId)}
-                              {t.note ? ` · ${t.note}` : ""}
-                            </div>
-                            <div className="tx-row-sub">
-                              {accountName(accounts, t.accountId)} · {formatShortDate(t.occurredAt)}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <span
-                              className={
-                                t.type === "expense" ? "tx-amount tx-amount--expense" : "tx-amount tx-amount--income"
-                              }
-                            >
-                              {t.type === "expense" ? "−" : "+"}
-                              {formatMoney(t.amountMinor, t.currencyCode)}
-                            </span>
-                            {!t.exchangeGroupId && (
-                              <div style={{ marginTop: 6 }}>
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-ghost-danger"
-                                  onClick={async () => {
-                                    if (!confirm("Удалить операцию?")) return;
-                                    await api(`/transactions/${t.id}`, { method: "DELETE" });
-                                    setTransactions(await api("/transactions"));
-                                    setAccounts(await api("/accounts"));
-                                  }}
-                                >
-                                  Удалить
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </li>
+                    <>
+                      {groupTransactionsByLocalDate(sortedTx.slice(0, 80)).map((g) => (
+                        <div key={g.key} className="tx-date-group">
+                          <div className="tx-date-heading">{g.label}</div>
+                          <ul className="tx-list">
+                            {g.items.map((t) => (
+                              <TxRow
+                                key={t.id}
+                                t={t}
+                                categories={categories}
+                                accounts={accounts}
+                                showDelete
+                                onDelete={async () => {
+                                  if (!confirm("Удалить операцию?")) return;
+                                  await api(`/transactions/${t.id}`, { method: "DELETE" });
+                                  setTransactions(await api("/transactions"));
+                                  setAccounts(await api("/accounts"));
+                                }}
+                              />
+                            ))}
+                          </ul>
+                        </div>
                       ))}
-                    </ul>
+                    </>
                   )}
                 </div>
               </>
@@ -570,25 +645,25 @@ export default function App() {
         <nav className="bottom-nav" aria-label="Основные разделы">
           <button type="button" className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}>
             <span className="nav-icon" aria-hidden>
-              ◎
+              🏠
             </span>
             Обзор
           </button>
           <button type="button" className={tab === "action" ? "active" : ""} onClick={() => setTab("action")}>
             <span className="nav-icon" aria-hidden>
-              ＋
+              ➕
             </span>
             Запись
           </button>
           <button type="button" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
             <span className="nav-icon" aria-hidden>
-              ≡
+              📋
             </span>
             История
           </button>
           <button type="button" className={tab === "more" ? "active" : ""} onClick={() => setTab("more")}>
             <span className="nav-icon" aria-hidden>
-              ⋯
+              ⚙
             </span>
             Ещё
           </button>
@@ -615,19 +690,31 @@ function AccountForm({ onCreated }: { onCreated: () => Promise<void> }) {
         await onCreated();
       }}
     >
-      <input
-        className="input"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Название счёта"
-        required
-      />
-      <input
-        className="input"
-        value={currency}
-        onChange={(e) => setCurrency(e.target.value)}
-        placeholder="Валюта (RUB, USD…)"
-      />
+      <div className="field">
+        <label className="field-label" htmlFor="f-acc-name">
+          Название
+        </label>
+        <input
+          id="f-acc-name"
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Например, Основной"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-acc-cur">
+          Валюта
+        </label>
+        <input
+          id="f-acc-cur"
+          className="input"
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          placeholder="RUB, USD, EUR…"
+        />
+      </div>
       <label className="label-row">
         <input type="checkbox" checked={isCrypto} onChange={(e) => setIsCrypto(e.target.checked)} />
         Криптовалютный счёт
@@ -652,17 +739,33 @@ function CategoryForm({ onCreated }: { onCreated: () => Promise<void> }) {
         await onCreated();
       }}
     >
-      <input
-        className="input"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Название категории"
-        required
-      />
-      <select className="select" value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income")}>
-        <option value="expense">Расход</option>
-        <option value="income">Доход</option>
-      </select>
+      <div className="field">
+        <label className="field-label" htmlFor="f-cat-name">
+          Название
+        </label>
+        <input
+          id="f-cat-name"
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Продукты, Зарплата…"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-cat-kind">
+          Тип
+        </label>
+        <select
+          id="f-cat-kind"
+          className="select"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as "expense" | "income")}
+        >
+          <option value="expense">Расход</option>
+          <option value="income">Доход</option>
+        </select>
+      </div>
       <button type="submit" className="btn btn-primary">
         Добавить категорию
       </button>
@@ -720,51 +823,99 @@ function TransactionForm({
         await onDone();
       }}
     >
-      <select className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
-        <option value="">Счёт</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name} ({a.currencyCode})
-          </option>
-        ))}
-      </select>
-      <div className="segmented">
-        <button type="button" className={type === "expense" ? "active" : ""} onClick={() => setType("expense")}>
-          Расход
-        </button>
-        <button type="button" className={type === "income" ? "active" : ""} onClick={() => setType("income")}>
-          Доход
-        </button>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-acc">
+          Счёт
+        </label>
+        <select
+          id="f-tx-acc"
+          className="select"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          required
+        >
+          <option value="">Выберите счёт</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.currencyCode})
+            </option>
+          ))}
+        </select>
       </div>
-      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-        <option value="">Без категории</option>
-        {cats.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={amountMajor}
-        onChange={(e) => setAmountMajor(e.target.value)}
-        placeholder={`Сумма, ${acc?.currencyCode ?? "валюта"}`}
-        required
-      />
-      <input
-        className="input"
-        type="datetime-local"
-        value={occurredAt}
-        onChange={(e) => setOccurredAt(e.target.value)}
-      />
-      <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Комментарий" />
-      <input
-        className="input"
-        value={reportMajor}
-        onChange={(e) => setReportMajor(e.target.value)}
-        placeholder="Для бюджета в RUB (необязательно)"
-      />
+      <div className="field">
+        <span className="field-label">Тип операции</span>
+        <div className="segmented" style={{ marginBottom: 0 }}>
+          <button type="button" className={type === "expense" ? "active" : ""} onClick={() => setType("expense")}>
+            Расход
+          </button>
+          <button type="button" className={type === "income" ? "active" : ""} onClick={() => setType("income")}>
+            Доход
+          </button>
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-cat">
+          Категория
+        </label>
+        <select id="f-tx-cat" className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <option value="">Без категории</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-amt">
+          Сумма ({acc?.currencyCode ?? "валюта счёта"})
+        </label>
+        <input
+          id="f-tx-amt"
+          className="input"
+          inputMode="decimal"
+          value={amountMajor}
+          onChange={(e) => setAmountMajor(e.target.value)}
+          placeholder="0,00"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-when">
+          Когда
+        </label>
+        <input
+          id="f-tx-when"
+          className="input"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={(e) => setOccurredAt(e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-note">
+          Комментарий
+        </label>
+        <input
+          id="f-tx-note"
+          className="input"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Необязательно"
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-tx-rub">
+          В бюджете (RUB)
+        </label>
+        <input
+          id="f-tx-rub"
+          className="input"
+          value={reportMajor}
+          onChange={(e) => setReportMajor(e.target.value)}
+          placeholder="Эквивалент для лимита — необязательно"
+        />
+      </div>
       <button type="submit" className="btn btn-primary">
         Сохранить операцию
       </button>
@@ -813,39 +964,72 @@ function ExchangeForm({
         await onDone();
       }}
     >
-      <select className="select" value={fromId} onChange={(e) => setFromId(e.target.value)} required>
-        <option value="">Списать с</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name} ({a.currencyCode})
-          </option>
-        ))}
-      </select>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={outMajor}
-        onChange={(e) => setOutMajor(e.target.value)}
-        placeholder={`Сумма списания (${fromAcc?.currencyCode ?? "—"})`}
-        required
-      />
-      <select className="select" value={toId} onChange={(e) => setToId(e.target.value)} required>
-        <option value="">Зачислить на</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name} ({a.currencyCode})
-          </option>
-        ))}
-      </select>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={inMajor}
-        onChange={(e) => setInMajor(e.target.value)}
-        placeholder={`Сумма зачисления (${toAcc?.currencyCode ?? "—"})`}
-        required
-      />
-      <input className="input" type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
+      <div className="field">
+        <label className="field-label" htmlFor="f-ex-from">
+          Списать со счёта
+        </label>
+        <select id="f-ex-from" className="select" value={fromId} onChange={(e) => setFromId(e.target.value)} required>
+          <option value="">Выберите</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.currencyCode})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-ex-out">
+          Сумма списания ({fromAcc?.currencyCode ?? "—"})
+        </label>
+        <input
+          id="f-ex-out"
+          className="input"
+          inputMode="decimal"
+          value={outMajor}
+          onChange={(e) => setOutMajor(e.target.value)}
+          placeholder="0,00"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-ex-to">
+          Зачислить на счёт
+        </label>
+        <select id="f-ex-to" className="select" value={toId} onChange={(e) => setToId(e.target.value)} required>
+          <option value="">Выберите</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.currencyCode})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-ex-in">
+          Сумма зачисления ({toAcc?.currencyCode ?? "—"})
+        </label>
+        <input
+          id="f-ex-in"
+          className="input"
+          inputMode="decimal"
+          value={inMajor}
+          onChange={(e) => setInMajor(e.target.value)}
+          placeholder="0,00"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-ex-when">
+          Когда
+        </label>
+        <input
+          id="f-ex-when"
+          className="input"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={(e) => setOccurredAt(e.target.value)}
+        />
+      </div>
       <button type="submit" className="btn btn-primary">
         Выполнить обмен
       </button>
@@ -885,23 +1069,45 @@ function BudgetForm({
         await onDone();
       }}
     >
-      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-        <option value="">Категория расхода</option>
-        {exp.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={limitMajor}
-        onChange={(e) => setLimitMajor(e.target.value)}
-        placeholder="Лимит на месяц"
-        required
-      />
-      <input className="input" value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="Валюта" />
+      <div className="field">
+        <label className="field-label" htmlFor="f-bud-cat">
+          Категория расхода
+        </label>
+        <select id="f-bud-cat" className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+          <option value="">Выберите</option>
+          {exp.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-bud-lim">
+          Лимит на месяц
+        </label>
+        <input
+          id="f-bud-lim"
+          className="input"
+          inputMode="decimal"
+          value={limitMajor}
+          onChange={(e) => setLimitMajor(e.target.value)}
+          placeholder="0,00"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-bud-cur">
+          Валюта лимита
+        </label>
+        <input
+          id="f-bud-cur"
+          className="input"
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          placeholder="RUB"
+        />
+      </div>
       <button type="submit" className="btn btn-primary">
         Сохранить бюджет
       </button>
@@ -952,36 +1158,62 @@ function RecurringForm({
         await onDone();
       }}
     >
-      <select className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
-        <option value="">Счёт</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name} ({a.currencyCode})
-          </option>
-        ))}
-      </select>
-      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-        <option value="">Без категории</option>
-        {exp.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={amountMajor}
-        onChange={(e) => setAmountMajor(e.target.value)}
-        placeholder="Сумма"
-        required
-      />
-      <select className="select" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
-        <option value="daily">Каждый день</option>
-        <option value="weekly">Каждую неделю</option>
-        <option value="monthly">Каждый месяц</option>
-      </select>
-      <input className="input" type="datetime-local" value={nextAt} onChange={(e) => setNextAt(e.target.value)} />
+      <div className="field">
+        <label className="field-label" htmlFor="f-rec-acc">
+          Счёт
+        </label>
+        <select id="f-rec-acc" className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+          <option value="">Выберите</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.currencyCode})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-rec-cat">
+          Категория
+        </label>
+        <select id="f-rec-cat" className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <option value="">Без категории</option>
+          {exp.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-rec-amt">
+          Сумма
+        </label>
+        <input
+          id="f-rec-amt"
+          className="input"
+          inputMode="decimal"
+          value={amountMajor}
+          onChange={(e) => setAmountMajor(e.target.value)}
+          placeholder="0,00"
+          required
+        />
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-rec-per">
+          Период
+        </label>
+        <select id="f-rec-per" className="select" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
+          <option value="daily">Каждый день</option>
+          <option value="weekly">Каждую неделю</option>
+          <option value="monthly">Каждый месяц</option>
+        </select>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="f-rec-next">
+          Следующее списание
+        </label>
+        <input id="f-rec-next" className="input" type="datetime-local" value={nextAt} onChange={(e) => setNextAt(e.target.value)} />
+      </div>
       <button type="submit" className="btn btn-primary">
         Добавить повтор
       </button>
