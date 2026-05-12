@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, setToken } from "./api";
+import { api, clearToken, getToken, setToken, isApiBaseConfigured } from "./api";
 import { getTelegramWebApp } from "./telegram";
 
 type Account = {
@@ -66,6 +66,7 @@ export default function App() {
   const [budgets, setBudgets] = useState<BudgetRow[]>([]);
   const [recurring, setRecurring] = useState<RecurringRow[]>([]);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [bootHint, setBootHint] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     if (!getToken()) return;
@@ -96,6 +97,13 @@ export default function App() {
 
     (async () => {
       try {
+        if (!import.meta.env.DEV && !isApiBaseConfigured()) {
+          setErr(
+            "В сборке не задан VITE_API_URL. Render → finance-miniapp-web → Environment: добавьте VITE_API_URL = https://ваш-api.onrender.com и пересоберите.",
+          );
+          setReady(true);
+          return;
+        }
         const initData = tw?.initData ?? "";
         if (!initData && import.meta.env.DEV) {
           if (getToken()) {
@@ -110,18 +118,25 @@ export default function App() {
           setReady(true);
           return;
         }
+        setBootHint(
+          "Подключение к серверу… (на Render free первый запрос может занять до 1–2 мин)",
+        );
         const { token } = await api<{ token: string }>("/auth/telegram", {
           method: "POST",
           body: JSON.stringify({ initData }),
           auth: false,
         });
         setToken(token);
+        setBootHint("Синхронизация повторов…");
         await api("/sync/recurring", { method: "POST" });
+        setBootHint("Загрузка данных…");
         setReady(true);
         await loadAll();
+        setBootHint(null);
       } catch (e) {
         setErr(String(e));
         setReady(true);
+        setBootHint(null);
       }
     })();
   }, [loadAll]);
@@ -133,7 +148,19 @@ export default function App() {
     window.location.reload();
   };
 
-  if (!ready) return <p style={{ padding: 16 }}>Загрузка…</p>;
+  if (!ready) {
+    return (
+      <p style={{ padding: 16 }}>
+        Загрузка…
+        {bootHint && (
+          <>
+            <br />
+            <span style={{ fontSize: 13, color: "#555" }}>{bootHint}</span>
+          </>
+        )}
+      </p>
+    );
+  }
   if (err && !getToken()) return <p style={{ padding: 16, color: "crimson" }}>{err}</p>;
 
   return (
