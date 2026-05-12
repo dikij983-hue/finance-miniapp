@@ -1,3 +1,4 @@
+# API image (монорепо). Копия в корне `Dockerfile` — Render ищет именно его.
 FROM node:22-alpine AS deps
 WORKDIR /src
 COPY package.json package-lock.json ./
