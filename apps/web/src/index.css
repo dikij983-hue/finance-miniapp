@@ -1,0 +1,13 @@
+body {
+  margin: 0;
+  background: #f4f4f5;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}

@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: finance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      POSTGRES_DB: finance
+    volumes:
+      - finance_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d finance"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  finance-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: finance-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://finance:${POSTGRES_PASSWORD:-finance}@postgres:5432/finance
+      BOT_TOKEN: ${BOT_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "3000"
+      API_BEARER_KEY: ${API_BEARER_KEY:-}
+      API_USER_TELEGRAM_ID: ${API_USER_TELEGRAM_ID:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+  finance-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_PREFIX: /api
+    container_name: finance-web
+    restart: unless-stopped
+    depends_on:
+      - finance-api
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+
+volumes:
+  finance_pg:

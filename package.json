@@ -1,0 +1,15 @@
+{
+  "name": "finance-miniapp",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev -w=@finance/api\" \"npm run dev -w=@finance/web\"",
+    "build": "npm run build -w=@finance/web && npm run build -w=@finance/api",
+    "db:generate": "npm run db:generate -w=@finance/api",
+    "db:migrate": "npm run db:migrate -w=@finance/api",
+    "typecheck": "npm run typecheck -w=@finance/api && npm run typecheck -w=@finance/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
