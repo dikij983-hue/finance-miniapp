@@ -1,5 +1,16 @@
 # Бесплатный деплой (без Railway): Neon + Render + Cloudflare Pages
 
+## Автоматизация на вашей машине (Render API + Telegram)
+
+Если уже есть **`.env.render`** с `RENDER_API_KEY`, можно одним скриптом создать **Static Site** на Render (если ещё нет), дождаться билда и выставить кнопку мини-аппа в боте:
+
+```bash
+cd finance-miniapp
+./scripts/deploy-telegram-stack.sh
+```
+
+Нужны **jq** и **curl**. `BOT_TOKEN` скрипт попробует взять из **`.env.telegram`** (шаблон: [`.env.telegram.example`](.env.telegram.example)), иначе — из **Render API** env-vars веб-сервиса API (Render отдаёт значения открытым текстом — не публикуйте вывод).
+
 Похоже на Railway по идее (Git + переменные + автодеплой), **без оплаты** для личного MVP. Минусы: API на Render **засыпает** после ~15 минут простоя — первый запрос после паузы может идти **30–60 секунд**. Для учёта «когда открыл — подождал» обычно терпимо.
 
 ## 1. База — [Neon](https://neon.tech) (бесплатный Postgres)

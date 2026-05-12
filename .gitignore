@@ -6,6 +6,8 @@ apps/api/.env
 apps/web/.env.local
 # Локальный ключ Render API (только у вас на машине; не в Git)
 .env.render
+# Локальный BOT_TOKEN только для скрипта deploy-telegram-stack.sh (не в Git)
+.env.telegram
 *.log
 apps/web/tsconfig.tsbuildinfo
 apps/api/tsconfig.tsbuildinfo
