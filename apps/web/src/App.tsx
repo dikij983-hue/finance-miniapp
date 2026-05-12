@@ -610,15 +610,43 @@ export default function App() {
         {import.meta.env.DEV && !getTelegramWebApp()?.initData && (
           <div className="card card--muted">
             <h2 className="card-title">Dev: вход без Telegram</h2>
+            <div
+              style={{
+                margin: "0 0 12px",
+                padding: "12px",
+                borderRadius: 10,
+                background: "color-mix(in srgb, var(--app-danger) 8%, var(--app-elevated))",
+                border: "1px solid color-mix(in srgb, var(--app-danger) 25%, var(--app-border))",
+                fontSize: "0.8125rem",
+                lineHeight: 1.5,
+                color: "var(--app-text)",
+              }}
+            >
+              <strong>Почему в консоли «Telegram is not defined»</strong>
+              <br />
+              Объект <code style={{ fontSize: "0.75rem" }}>Telegram</code> живёт только в{" "}
+              <strong>консоли вкладки с сайтом</strong> (Chrome / Safari на <code>http://127.0.0.1:5173</code>), не в
+              консоли самого Cursor и не в «чужом» контексте DevTools. Откройте страницу в обычном браузере → F12 →
+              вкладка Console → там проверьте: <code style={{ fontSize: "0.75rem" }}>__financeDev.hasTelegramGlobal</code>{" "}
+              (должно быть <code>true</code>, если загрузился{" "}
+              <code style={{ fontSize: "0.75rem" }}>telegram-web-app.js</code>).
+            </div>
             <p style={{ margin: "0 0 10px", fontSize: "0.8125rem", color: "var(--app-hint)" }}>
-              Вставьте initData. JWT в localStorage.
+              <strong>Откуда взять initData:</strong> только из клиента Telegram. Откройте мини-апп в Telegram Desktop →
+              DevTools именно окна мини-аппа (часто <kbd>Ctrl+Shift+I</kbd> / <kbd>Cmd+Option+I</kbd>) → в консоли:{" "}
+              <code style={{ fontSize: "0.72rem" }}>copy(Telegram.WebApp.initData)</code> или скопируйте строку
+              вручную. Либо без initData: в Network при входе в мини-апп скопируйте JWT из ответа{" "}
+              <code style={{ fontSize: "0.72rem" }}>POST /auth/telegram</code> и в консоли страницы:{" "}
+              <code style={{ fontSize: "0.7rem", wordBreak: "break-all" }}>
+                localStorage.setItem(&apos;finance_jwt&apos;, &apos;…&apos;); location.reload()
+              </code>
             </p>
             <textarea
               id="dev-init"
               rows={3}
               className="input"
               style={{ resize: "vertical", marginBottom: 10 }}
-              placeholder="initData…"
+              placeholder="Вставьте сюда полную строку initData из Telegram…"
             />
             <button
               type="button"
