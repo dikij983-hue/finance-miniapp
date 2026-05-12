@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, clearToken, getToken, setToken, isApiBaseConfigured } from "./api";
+import { formatMoney, formatShortDate } from "./formatMoney";
+import { applyTelegramThemeVars } from "./theme";
 import { getTelegramWebApp } from "./telegram";
 
 type Account = {
@@ -52,8 +54,20 @@ type RecurringRow = {
   note: string | null;
 };
 
+type Tab = "home" | "action" | "history" | "more";
+type ActionSub = "tx" | "exchange";
+
 function toIsoFromLocal(dtLocal: string) {
   return new Date(dtLocal).toISOString();
+}
+
+function categoryName(categories: Category[], id: string | null) {
+  if (!id) return "Без категории";
+  return categories.find((c) => c.id === id)?.name ?? "Категория";
+}
+
+function accountName(accounts: Account[], id: string) {
+  return accounts.find((a) => a.id === id)?.name ?? "Счёт";
 }
 
 export default function App() {
@@ -67,6 +81,8 @@ export default function App() {
   const [recurring, setRecurring] = useState<RecurringRow[]>([]);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [bootHint, setBootHint] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("home");
+  const [actionSub, setActionSub] = useState<ActionSub>("tx");
 
   const loadAll = useCallback(async () => {
     if (!getToken()) return;
@@ -94,6 +110,7 @@ export default function App() {
     tw?.ready();
     tw?.expand?.();
     tw?.disableVerticalSwipes?.();
+    applyTelegramThemeVars();
 
     (async () => {
       try {
@@ -111,6 +128,7 @@ export default function App() {
             await loadAll();
           }
           setReady(true);
+          applyTelegramThemeVars();
           return;
         }
         if (!initData) {
@@ -133,6 +151,7 @@ export default function App() {
         setReady(true);
         await loadAll();
         setBootHint(null);
+        applyTelegramThemeVars();
       } catch (e) {
         setErr(String(e));
         setReady(true);
@@ -140,6 +159,10 @@ export default function App() {
       }
     })();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (ready) applyTelegramThemeVars();
+  }, [ready]);
 
   const logout = () => {
     clearToken();
@@ -150,231 +173,428 @@ export default function App() {
 
   if (!ready) {
     return (
-      <p style={{ padding: 16 }}>
-        Загрузка…
-        {bootHint && (
-          <>
-            <br />
-            <span style={{ fontSize: 13, color: "#555" }}>{bootHint}</span>
-          </>
-        )}
-      </p>
+      <div className="state-block">
+        <div className="loader-title">Загрузка…</div>
+        {bootHint && <p>{bootHint}</p>}
+      </div>
     );
   }
-  if (err && !getToken()) return <p style={{ padding: 16, color: "crimson" }}>{err}</p>;
+  if (err && !getToken()) {
+    return (
+      <div className="state-block state-block--error">
+        <div className="loader-title">Не удалось войти</div>
+        <p>{err}</p>
+      </div>
+    );
+  }
+
+  const sortedTx = [...transactions].sort(
+    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+  );
 
   return (
-    <div style={{ padding: 12, fontFamily: "system-ui", maxWidth: 560, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 18 }}>Финучёт</h1>
-      {err && <p style={{ color: "orange" }}>{err}</p>}
-      {me && (
-        <p style={{ fontSize: 13 }}>
-          Отчётная валюта: <strong>{me.reportCurrency}</strong>{" "}
-          <button type="button" onClick={logout}>
-            Выйти
-          </button>
-        </p>
-      )}
+    <div className="app-shell">
+      <header className="app-header">
+        <h1>Финучёт</h1>
+        <div className="app-header-meta">
+          <span>{me ? `Отчёт: ${me.reportCurrency}` : " "}</span>
+          <div className="row-actions">
+            {getToken() && (
+              <button type="button" className="btn btn-ghost" onClick={logout}>
+                Выйти
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
 
-      {getToken() && (
-        <>
-          <Section title="Синхронизация повторов">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const r = await api<{ applied: number }>("/sync/recurring", {
-                    method: "POST",
-                  });
-                  setSyncMsg(`Создано операций: ${r.applied}`);
-                  await loadAll();
-                } catch (e) {
-                  setSyncMsg(String(e));
-                }
-              }}
-            >
-              Применить просроченные повторы
-            </button>
-            {syncMsg && <p>{syncMsg}</p>}
-          </Section>
+      <main className="app-main">
+        {err && (
+          <div className="card card--muted" style={{ marginBottom: 12 }}>
+            <p style={{ margin: 0, color: "var(--app-danger)", fontSize: "0.875rem" }}>{err}</p>
+          </div>
+        )}
 
-          <Section title="Счета">
-            <AccountForm
-              onCreated={async () => {
-                setAccounts(await api("/accounts"));
-              }}
-            />
-            <ul>
-              {accounts.map((a) => (
-                <li key={a.id}>
-                  {a.name} — {a.currencyCode} — баланс: {(a.balanceMinor / 100).toFixed(2)}{" "}
+        {getToken() && (
+          <>
+            {tab === "home" && (
+              <>
+                <p className="screen-title">Счета</p>
+                {accounts.length === 0 ? (
+                  <div className="card">
+                    <p style={{ margin: 0, color: "var(--app-hint)", fontSize: "0.9375rem" }}>
+                      Добавьте счёт во вкладке «Ещё», затем записывайте операции.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="accounts-scroll">
+                    {accounts.map((a) => (
+                      <div key={a.id} className="account-card">
+                        <div className="account-card-name">{a.name}</div>
+                        <div className="account-card-balance">
+                          {formatMoney(a.balanceMinor, a.currencyCode)}
+                        </div>
+                        <div className="account-card-meta">
+                          {a.currencyCode}
+                          {a.isCrypto ? " · крипто" : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="screen-title" style={{ marginTop: 8 }}>
+                  Последние операции
+                </p>
+                <div className="card">
+                  {sortedTx.length === 0 ? (
+                    <p style={{ margin: 0, color: "var(--app-hint)", fontSize: "0.9375rem" }}>
+                      Пока нет движений. Запись — вкладка «Запись».
+                    </p>
+                  ) : (
+                    <ul className="tx-list">
+                      {sortedTx.slice(0, 12).map((t) => (
+                        <li key={t.id} className="tx-row">
+                          <div className="tx-row-main">
+                            <div className="tx-row-title">
+                              {categoryName(categories, t.categoryId)}
+                              {t.note ? ` · ${t.note}` : ""}
+                            </div>
+                            <div className="tx-row-sub">
+                              {accountName(accounts, t.accountId)} · {formatShortDate(t.occurredAt)}
+                            </div>
+                          </div>
+                          <span
+                            className={
+                              t.type === "expense" ? "tx-amount tx-amount--expense" : "tx-amount tx-amount--income"
+                            }
+                          >
+                            {t.type === "expense" ? "−" : "+"}
+                            {formatMoney(t.amountMinor, t.currencyCode)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+
+            {tab === "action" && (
+              <>
+                <div className="segmented">
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!confirm("Удалить счёт?")) return;
-                      await api(`/accounts/${a.id}`, { method: "DELETE" });
-                      setAccounts(await api("/accounts"));
-                    }}
+                    className={actionSub === "tx" ? "active" : ""}
+                    onClick={() => setActionSub("tx")}
                   >
-                    ×
+                    Операция
                   </button>
-                </li>
-              ))}
-            </ul>
-          </Section>
-
-          <Section title="Категории">
-            <CategoryForm
-              onCreated={async () => {
-                setCategories(await api("/categories"));
-              }}
-            />
-            <ul>
-              {categories.map((c) => (
-                <li key={c.id}>
-                  {c.name} ({c.kind})
-                </li>
-              ))}
-            </ul>
-          </Section>
-
-          <Section title="Доход / расход">
-            <TransactionForm
-              accounts={accounts}
-              categories={categories}
-              onDone={async () => {
-                setTransactions(await api("/transactions"));
-                setAccounts(await api("/accounts"));
-                const now = new Date();
-                setBudgets(
-                  await api(
-                    `/budgets?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
-                  ),
-                );
-              }}
-            />
-          </Section>
-
-          <Section title="Обмен между счетами">
-            <ExchangeForm
-              accounts={accounts}
-              onDone={async () => {
-                setTransactions(await api("/transactions"));
-                setAccounts(await api("/accounts"));
-              }}
-            />
-          </Section>
-
-          <Section title="Бюджет (текущий месяц UTC)">
-            <BudgetForm
-              categories={categories}
-              onDone={async () => {
-                const now = new Date();
-                setBudgets(
-                  await api(
-                    `/budgets?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
-                  ),
-                );
-              }}
-            />
-            <ul>
-              {budgets.map((b) => (
-                <li key={b.id}>
-                  лимит {(b.limitMinor / 100).toFixed(2)} {b.currencyCode} / потрачено{" "}
-                  {(b.spentMinor / 100).toFixed(2)} / осталось {(b.remainingMinor / 100).toFixed(2)}
-                </li>
-              ))}
-            </ul>
-          </Section>
-
-          <Section title="Повторяющиеся расходы">
-            <RecurringForm
-              accounts={accounts}
-              categories={categories}
-              onDone={async () => {
-                setRecurring(await api("/recurring"));
-              }}
-            />
-            <ul>
-              {recurring.map((r) => (
-                <li key={r.id}>
-                  {r.amountMinor / 100} {r.currencyCode} каждые {r.period}, след.{" "}
-                  {new Date(r.nextAt).toLocaleString()}{" "}
                   <button
                     type="button"
-                    onClick={async () => {
-                      await api(`/recurring/${r.id}`, { method: "DELETE" });
-                      setRecurring(await api("/recurring"));
-                    }}
+                    className={actionSub === "exchange" ? "active" : ""}
+                    onClick={() => setActionSub("exchange")}
                   >
-                    удалить
+                    Обмен
                   </button>
-                </li>
-              ))}
-            </ul>
-          </Section>
-
-          <Section title="Последние операции">
-            <ul style={{ fontSize: 13 }}>
-              {transactions.slice(0, 40).map((t) => (
-                <li key={t.id}>
-                  {t.type} {t.amountMinor / 100} {t.currencyCode}{" "}
-                  {t.note ?? ""}{" "}
-                  {new Date(t.occurredAt).toLocaleString()}{" "}
-                  {!t.exchangeGroupId && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await api(`/transactions/${t.id}`, { method: "DELETE" });
+                </div>
+                {actionSub === "tx" ? (
+                  <div className="card">
+                    <h2 className="card-title">Доход или расход</h2>
+                    <TransactionForm
+                      accounts={accounts}
+                      categories={categories}
+                      onDone={async () => {
                         setTransactions(await api("/transactions"));
                         setAccounts(await api("/accounts"));
+                        const now = new Date();
+                        setBudgets(
+                          await api(
+                            `/budgets?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
+                          ),
+                        );
+                        setTab("history");
                       }}
-                    >
-                      удалить
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </Section>
-        </>
-      )}
+                    />
+                  </div>
+                ) : (
+                  <div className="card">
+                    <h2 className="card-title">Между счетами</h2>
+                    <ExchangeForm
+                      accounts={accounts}
+                      onDone={async () => {
+                        setTransactions(await api("/transactions"));
+                        setAccounts(await api("/accounts"));
+                        setTab("history");
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
-      {import.meta.env.DEV && !getTelegramWebApp()?.initData && (
-        <Section title="Dev: вход без Telegram">
-          <p style={{ fontSize: 12 }}>
-            Вставьте initData из Telegram (или откройте внутри мини-аппа). JWT сохраняется в
-            localStorage.
-          </p>
-          <textarea id="dev-init" rows={3} style={{ width: "100%" }} placeholder="initData…" />
-          <button
-            type="button"
-            onClick={async () => {
-              const el = document.getElementById("dev-init") as HTMLTextAreaElement;
-              const initData = el.value.trim();
-              const { token } = await api<{ token: string }>("/auth/telegram", {
-                method: "POST",
-                body: JSON.stringify({ initData }),
-                auth: false,
-              });
-              setToken(token);
-              window.location.reload();
-            }}
-          >
-            Войти по initData
+            {tab === "history" && (
+              <>
+                <p className="screen-title">Все операции</p>
+                <div className="card">
+                  {sortedTx.length === 0 ? (
+                    <p style={{ margin: 0, color: "var(--app-hint)" }}>Список пуст.</p>
+                  ) : (
+                    <ul className="tx-list">
+                      {sortedTx.slice(0, 80).map((t) => (
+                        <li key={t.id} className="tx-row">
+                          <div className="tx-row-main">
+                            <div className="tx-row-title">
+                              {categoryName(categories, t.categoryId)}
+                              {t.note ? ` · ${t.note}` : ""}
+                            </div>
+                            <div className="tx-row-sub">
+                              {accountName(accounts, t.accountId)} · {formatShortDate(t.occurredAt)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <span
+                              className={
+                                t.type === "expense" ? "tx-amount tx-amount--expense" : "tx-amount tx-amount--income"
+                              }
+                            >
+                              {t.type === "expense" ? "−" : "+"}
+                              {formatMoney(t.amountMinor, t.currencyCode)}
+                            </span>
+                            {!t.exchangeGroupId && (
+                              <div style={{ marginTop: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-ghost-danger"
+                                  onClick={async () => {
+                                    if (!confirm("Удалить операцию?")) return;
+                                    await api(`/transactions/${t.id}`, { method: "DELETE" });
+                                    setTransactions(await api("/transactions"));
+                                    setAccounts(await api("/accounts"));
+                                  }}
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+
+            {tab === "more" && (
+              <>
+                <div className="card">
+                  <h2 className="card-title">Повторы</h2>
+                  <p style={{ margin: "0 0 12px", fontSize: "0.875rem", color: "var(--app-hint)" }}>
+                    Применить просроченные шаблоны к счетам.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ width: "100%" }}
+                    onClick={async () => {
+                      try {
+                        const r = await api<{ applied: number }>("/sync/recurring", {
+                          method: "POST",
+                        });
+                        setSyncMsg(`Создано операций: ${r.applied}`);
+                        await loadAll();
+                      } catch (e) {
+                        setSyncMsg(String(e));
+                      }
+                    }}
+                  >
+                    Синхронизировать повторы
+                  </button>
+                  {syncMsg && (
+                    <p style={{ margin: "10px 0 0", fontSize: "0.875rem" }}>{syncMsg}</p>
+                  )}
+                </div>
+
+                <div className="card">
+                  <h2 className="card-title">Счета</h2>
+                  <AccountForm
+                    onCreated={async () => {
+                      setAccounts(await api("/accounts"));
+                    }}
+                  />
+                  <ul className="tx-list" style={{ marginTop: 12 }}>
+                    {accounts.map((a) => (
+                      <li key={a.id} className="tx-row">
+                        <div className="tx-row-main">
+                          <div className="tx-row-title">{a.name}</div>
+                          <div className="tx-row-sub">
+                            {formatMoney(a.balanceMinor, a.currencyCode)}
+                            {a.isCrypto ? " · крипто" : ""}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-ghost-danger"
+                          onClick={async () => {
+                            if (!confirm("Удалить счёт?")) return;
+                            await api(`/accounts/${a.id}`, { method: "DELETE" });
+                            setAccounts(await api("/accounts"));
+                          }}
+                        >
+                          Удалить
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="card">
+                  <h2 className="card-title">Категории</h2>
+                  <CategoryForm
+                    onCreated={async () => {
+                      setCategories(await api("/categories"));
+                    }}
+                  />
+                  <div className="chip-list" style={{ marginTop: 12 }}>
+                    {categories.map((c) => (
+                      <span
+                        key={c.id}
+                        className={`chip ${c.kind === "expense" ? "chip--expense" : "chip--income"}`}
+                      >
+                        {c.name} · {c.kind === "expense" ? "расход" : "доход"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <h2 className="card-title">Бюджет (текущий месяц UTC)</h2>
+                  <BudgetForm
+                    categories={categories}
+                    onDone={async () => {
+                      const now = new Date();
+                      setBudgets(
+                        await api(
+                          `/budgets?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
+                        ),
+                      );
+                    }}
+                  />
+                  {budgets.map((b) => (
+                    <div key={b.id} className="budget-row">
+                      <strong>{categoryName(categories, b.categoryId)}</strong>
+                      <br />
+                      лимит {formatMoney(b.limitMinor, b.currencyCode)} · потрачено{" "}
+                      {formatMoney(b.spentMinor, b.currencyCode)} · осталось{" "}
+                      {formatMoney(b.remainingMinor, b.currencyCode)}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="card">
+                  <h2 className="card-title">Повторяющиеся расходы</h2>
+                  <RecurringForm
+                    accounts={accounts}
+                    categories={categories}
+                    onDone={async () => {
+                      setRecurring(await api("/recurring"));
+                    }}
+                  />
+                  <ul className="tx-list" style={{ marginTop: 12 }}>
+                    {recurring.map((r) => (
+                      <li key={r.id} className="tx-row">
+                        <div className="tx-row-main">
+                          <div className="tx-row-title">
+                            {formatMoney(r.amountMinor, r.currencyCode)} · {r.period}
+                          </div>
+                          <div className="tx-row-sub">
+                            {accountName(accounts, r.accountId)} · след.{" "}
+                            {formatShortDate(r.nextAt)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-ghost-danger"
+                          onClick={async () => {
+                            await api(`/recurring/${r.id}`, { method: "DELETE" });
+                            setRecurring(await api("/recurring"));
+                          }}
+                        >
+                          Удалить
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {import.meta.env.DEV && !getTelegramWebApp()?.initData && (
+          <div className="card card--muted">
+            <h2 className="card-title">Dev: вход без Telegram</h2>
+            <p style={{ margin: "0 0 10px", fontSize: "0.8125rem", color: "var(--app-hint)" }}>
+              Вставьте initData. JWT в localStorage.
+            </p>
+            <textarea
+              id="dev-init"
+              rows={3}
+              className="input"
+              style={{ resize: "vertical", marginBottom: 10 }}
+              placeholder="initData…"
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                const el = document.getElementById("dev-init") as HTMLTextAreaElement;
+                const initData = el.value.trim();
+                const { token } = await api<{ token: string }>("/auth/telegram", {
+                  method: "POST",
+                  body: JSON.stringify({ initData }),
+                  auth: false,
+                });
+                setToken(token);
+                window.location.reload();
+              }}
+            >
+              Войти по initData
+            </button>
+          </div>
+        )}
+      </main>
+
+      {getToken() && (
+        <nav className="bottom-nav" aria-label="Основные разделы">
+          <button type="button" className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}>
+            <span className="nav-icon" aria-hidden>
+              ◎
+            </span>
+            Обзор
           </button>
-        </Section>
+          <button type="button" className={tab === "action" ? "active" : ""} onClick={() => setTab("action")}>
+            <span className="nav-icon" aria-hidden>
+              ＋
+            </span>
+            Запись
+          </button>
+          <button type="button" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
+            <span className="nav-icon" aria-hidden>
+              ≡
+            </span>
+            История
+          </button>
+          <button type="button" className={tab === "more" ? "active" : ""} onClick={() => setTab("more")}>
+            <span className="nav-icon" aria-hidden>
+              ⋯
+            </span>
+            Ещё
+          </button>
+        </nav>
       )}
     </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <fieldset style={{ marginBottom: 16, border: "1px solid #ccc" }}>
-      <legend>{title}</legend>
-      {children}
-    </fieldset>
   );
 }
 
@@ -384,7 +604,7 @@ function AccountForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [isCrypto, setIsCrypto] = useState(false);
   return (
     <form
-      style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         await api("/accounts", {
@@ -395,13 +615,26 @@ function AccountForm({ onCreated }: { onCreated: () => Promise<void> }) {
         await onCreated();
       }}
     >
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" required />
-      <input value={currency} onChange={(e) => setCurrency(e.target.value)} size={6} />
-      <label>
-        <input type="checkbox" checked={isCrypto} onChange={(e) => setIsCrypto(e.target.checked)} />{" "}
-        крипто
+      <input
+        className="input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Название счёта"
+        required
+      />
+      <input
+        className="input"
+        value={currency}
+        onChange={(e) => setCurrency(e.target.value)}
+        placeholder="Валюта (RUB, USD…)"
+      />
+      <label className="label-row">
+        <input type="checkbox" checked={isCrypto} onChange={(e) => setIsCrypto(e.target.checked)} />
+        Криптовалютный счёт
       </label>
-      <button type="submit">+ счёт</button>
+      <button type="submit" className="btn btn-primary">
+        Добавить счёт
+      </button>
     </form>
   );
 }
@@ -411,7 +644,7 @@ function CategoryForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [kind, setKind] = useState<"expense" | "income">("expense");
   return (
     <form
-      style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         await api("/categories", { method: "POST", body: JSON.stringify({ name, kind }) });
@@ -419,12 +652,20 @@ function CategoryForm({ onCreated }: { onCreated: () => Promise<void> }) {
         await onCreated();
       }}
     >
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Категория" required />
-      <select value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income")}>
-        <option value="expense">расход</option>
-        <option value="income">доход</option>
+      <input
+        className="input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Название категории"
+        required
+      />
+      <select className="select" value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income")}>
+        <option value="expense">Расход</option>
+        <option value="income">Доход</option>
       </select>
-      <button type="submit">+ категория</button>
+      <button type="submit" className="btn btn-primary">
+        Добавить категорию
+      </button>
     </form>
   );
 }
@@ -441,7 +682,7 @@ function TransactionForm({
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [type, setType] = useState<"expense" | "income">("expense");
-  const [amountMajor, setAmountMajor] = useState(""); // user types rubles
+  const [amountMajor, setAmountMajor] = useState("");
   const [occurredAt, setOccurredAt] = useState(() => {
     const d = new Date();
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -455,6 +696,7 @@ function TransactionForm({
 
   return (
     <form
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!acc) return;
@@ -478,46 +720,54 @@ function TransactionForm({
         await onDone();
       }}
     >
-      <div style={{ display: "grid", gap: 6 }}>
-        <select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
-          <option value="">Счёт</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} ({a.currencyCode})
-            </option>
-          ))}
-        </select>
-        <select value={type} onChange={(e) => setType(e.target.value as "expense" | "income")}>
-          <option value="expense">расход</option>
-          <option value="income">доход</option>
-        </select>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">Без категории</option>
-          {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <input
-          value={amountMajor}
-          onChange={(e) => setAmountMajor(e.target.value)}
-          placeholder={`Сумма в ${acc?.currencyCode ?? "валюте"} (например 10.50)`}
-          required
-        />
-        <input
-          type="datetime-local"
-          value={occurredAt}
-          onChange={(e) => setOccurredAt(e.target.value)}
-        />
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="комментарий" />
-        <input
-          value={reportMajor}
-          onChange={(e) => setReportMajor(e.target.value)}
-          placeholder="Эквивалент для бюджета в RUB (опционально)"
-        />
-        <button type="submit">Записать</button>
+      <select className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+        <option value="">Счёт</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.currencyCode})
+          </option>
+        ))}
+      </select>
+      <div className="segmented">
+        <button type="button" className={type === "expense" ? "active" : ""} onClick={() => setType("expense")}>
+          Расход
+        </button>
+        <button type="button" className={type === "income" ? "active" : ""} onClick={() => setType("income")}>
+          Доход
+        </button>
       </div>
+      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+        <option value="">Без категории</option>
+        {cats.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={amountMajor}
+        onChange={(e) => setAmountMajor(e.target.value)}
+        placeholder={`Сумма, ${acc?.currencyCode ?? "валюта"}`}
+        required
+      />
+      <input
+        className="input"
+        type="datetime-local"
+        value={occurredAt}
+        onChange={(e) => setOccurredAt(e.target.value)}
+      />
+      <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Комментарий" />
+      <input
+        className="input"
+        value={reportMajor}
+        onChange={(e) => setReportMajor(e.target.value)}
+        placeholder="Для бюджета в RUB (необязательно)"
+      />
+      <button type="submit" className="btn btn-primary">
+        Сохранить операцию
+      </button>
     </form>
   );
 }
@@ -544,6 +794,7 @@ function ExchangeForm({
 
   return (
     <form
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!fromAcc || !toAcc) return;
@@ -562,38 +813,42 @@ function ExchangeForm({
         await onDone();
       }}
     >
-      <div style={{ display: "grid", gap: 6 }}>
-        <select value={fromId} onChange={(e) => setFromId(e.target.value)} required>
-          <option value="">Списать с</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} ({a.currencyCode})
-            </option>
-          ))}
-        </select>
-        <input
-          value={outMajor}
-          onChange={(e) => setOutMajor(e.target.value)}
-          placeholder={`Сумма списания (${fromAcc?.currencyCode ?? ""})`}
-          required
-        />
-        <select value={toId} onChange={(e) => setToId(e.target.value)} required>
-          <option value="">Зачислить на</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} ({a.currencyCode})
-            </option>
-          ))}
-        </select>
-        <input
-          value={inMajor}
-          onChange={(e) => setInMajor(e.target.value)}
-          placeholder={`Сумма зачисления (${toAcc?.currencyCode ?? ""})`}
-          required
-        />
-        <input type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
-        <button type="submit">Обменять</button>
-      </div>
+      <select className="select" value={fromId} onChange={(e) => setFromId(e.target.value)} required>
+        <option value="">Списать с</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.currencyCode})
+          </option>
+        ))}
+      </select>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={outMajor}
+        onChange={(e) => setOutMajor(e.target.value)}
+        placeholder={`Сумма списания (${fromAcc?.currencyCode ?? "—"})`}
+        required
+      />
+      <select className="select" value={toId} onChange={(e) => setToId(e.target.value)} required>
+        <option value="">Зачислить на</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.currencyCode})
+          </option>
+        ))}
+      </select>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={inMajor}
+        onChange={(e) => setInMajor(e.target.value)}
+        placeholder={`Сумма зачисления (${toAcc?.currencyCode ?? "—"})`}
+        required
+      />
+      <input className="input" type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
+      <button type="submit" className="btn btn-primary">
+        Выполнить обмен
+      </button>
     </form>
   );
 }
@@ -612,6 +867,7 @@ function BudgetForm({
 
   return (
     <form
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         const now = new Date();
@@ -629,7 +885,7 @@ function BudgetForm({
         await onDone();
       }}
     >
-      <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
         <option value="">Категория расхода</option>
         {exp.map((c) => (
           <option key={c.id} value={c.id}>
@@ -637,9 +893,18 @@ function BudgetForm({
           </option>
         ))}
       </select>
-      <input value={limitMajor} onChange={(e) => setLimitMajor(e.target.value)} placeholder="Лимит" required />
-      <input value={currency} onChange={(e) => setCurrency(e.target.value)} size={6} />
-      <button type="submit">+ бюджет на месяц</button>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={limitMajor}
+        onChange={(e) => setLimitMajor(e.target.value)}
+        placeholder="Лимит на месяц"
+        required
+      />
+      <input className="input" value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="Валюта" />
+      <button type="submit" className="btn btn-primary">
+        Сохранить бюджет
+      </button>
     </form>
   );
 }
@@ -668,6 +933,7 @@ function RecurringForm({
 
   return (
     <form
+      className="form-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!acc) return;
@@ -686,37 +952,39 @@ function RecurringForm({
         await onDone();
       }}
     >
-      <div style={{ display: "grid", gap: 6 }}>
-        <select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
-          <option value="">Счёт</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} ({a.currencyCode})
-            </option>
-          ))}
-        </select>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">Без категории</option>
-          {exp.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <input
-          value={amountMajor}
-          onChange={(e) => setAmountMajor(e.target.value)}
-          placeholder="Сумма"
-          required
-        />
-        <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
-          <option value="daily">день</option>
-          <option value="weekly">неделя</option>
-          <option value="monthly">месяц</option>
-        </select>
-        <input type="datetime-local" value={nextAt} onChange={(e) => setNextAt(e.target.value)} />
-        <button type="submit">+ повтор</button>
-      </div>
+      <select className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+        <option value="">Счёт</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.currencyCode})
+          </option>
+        ))}
+      </select>
+      <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+        <option value="">Без категории</option>
+        {exp.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={amountMajor}
+        onChange={(e) => setAmountMajor(e.target.value)}
+        placeholder="Сумма"
+        required
+      />
+      <select className="select" value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
+        <option value="daily">Каждый день</option>
+        <option value="weekly">Каждую неделю</option>
+        <option value="monthly">Каждый месяц</option>
+      </select>
+      <input className="input" type="datetime-local" value={nextAt} onChange={(e) => setNextAt(e.target.value)} />
+      <button type="submit" className="btn btn-primary">
+        Добавить повтор
+      </button>
     </form>
   );
 }
