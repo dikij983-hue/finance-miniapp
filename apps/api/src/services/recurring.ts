@@ -1,6 +1,6 @@
 import { and, eq, lte } from "drizzle-orm";
-import type { Db } from "../db/client";
-import { recurringRules, transactions } from "../db/schema";
+import type { Db } from "../db/client.js";
+import { recurringRules, transactions } from "../db/schema.js";
 
 type Period = "daily" | "weekly" | "monthly";
 

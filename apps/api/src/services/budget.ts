@@ -1,6 +1,6 @@
 import { and, eq, gte, isNull, lte } from "drizzle-orm";
-import type { Db } from "../db/client";
-import { transactions } from "../db/schema";
+import type { Db } from "../db/client.js";
+import { transactions } from "../db/schema.js";
 
 export async function sumExpenseForBudget(
   db: Db,

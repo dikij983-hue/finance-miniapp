@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
-import { loadEnv } from "./env";
-import { createDb } from "./db/client";
-import { createApp } from "./app";
+import { loadEnv } from "./env.js";
+import { createDb } from "./db/client.js";
+import { createApp } from "./app.js";
 
 const env = loadEnv();
 const db = createDb(env.DATABASE_URL);

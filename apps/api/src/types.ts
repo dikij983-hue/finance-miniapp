@@ -1,5 +1,5 @@
-import type { Db } from "./db/client";
-import type { Env } from "./env";
+import type { Db } from "./db/client.js";
+import type { Env } from "./env.js";
 
 export type HonoEnv = {
   Variables: {

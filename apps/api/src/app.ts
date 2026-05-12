@@ -3,11 +3,11 @@ import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { eq, and, desc, gte, lte } from "drizzle-orm";
-import type { HonoEnv } from "./types";
-import type { Db } from "./db/client";
-import type { Env } from "./env";
-import { verifyUserToken, signUserToken } from "./auth/jwt";
-import { validateTelegramInitData } from "./auth/telegram";
+import type { HonoEnv } from "./types.js";
+import type { Db } from "./db/client.js";
+import type { Env } from "./env.js";
+import { verifyUserToken, signUserToken } from "./auth/jwt.js";
+import { validateTelegramInitData } from "./auth/telegram.js";
 import {
   users,
   accounts,
@@ -15,9 +15,9 @@ import {
   transactions,
   budgets,
   recurringRules,
-} from "./db/schema";
-import { applyDueRecurring } from "./services/recurring";
-import { sumExpenseForBudget, accountBalances } from "./services/budget";
+} from "./db/schema.js";
+import { applyDueRecurring } from "./services/recurring.js";
+import { sumExpenseForBudget, accountBalances } from "./services/budget.js";
 
 async function reportCurrencyOf(db: Db, userId: string) {
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
